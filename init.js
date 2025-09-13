@@ -151,8 +151,8 @@ const createTables = async () => {
 };
 
 const createDefaultAdmin = async () => {
-  const adminEmail = 'admin@rotibank.com';
-  const adminPassword = 'admin123'; // In production, use a secure password
+  const adminEmail = 'ishanprof77@rotibank.com';
+  const adminPassword = 'ishan123'; // In production, use a secure password
   
   // Check if admin already exists
   const existingAdmin = await new Promise((resolve, reject) => {
@@ -174,7 +174,7 @@ const createDefaultAdmin = async () => {
         }
       );
     });
-    console.log('👤 Default admin user created: admin@rotibank.com / admin123');
+    console.log('👤 Default admin user created: ishanprof77@rotibank.com / ishan123');
   }
 };
 
