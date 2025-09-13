@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Food Wastage Solution</title>
+    <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+    <header>
+        <h1>Save Food, Save Lives</h1>
+        <nav>
+            <button onclick="showPortal('restaurant')">Restaurant Portal</button>
+            <button onclick="showPortal('volunteer')">Volunteer Portal</button>
+            <button onclick="showPortal('ngo')">NGO Portal</button>
+            <button onclick="showPortal('leaderboard')">Leaderboard</button>
+        </nav>
+    </header>
+
+    <main>
+        <section id="restaurant" class="portal hidden">
+            <h2>Restaurant Portal</h2>
+            <form id="restaurantForm">
+                <input type="text" placeholder="Restaurant Name" required/>
+                <input type="email" placeholder="Email" required/>
+                <textarea placeholder="Describe surplus food"></textarea>
+                <button type="submit">Submit</button>
+            </form>
+        </section>
+
+        <section id="volunteer" class="portal hidden">
+            <h2>Volunteer Portal</h2>
+            <form id="volunteerForm">
+                <input type="text" placeholder="Name" required/>
+                <input type="email" placeholder="Email" required/>
+                <input type="text" placeholder="Location" required/>
+                <button type="submit">Register</button>
+            </form>
+        </section>
+
+        <section id="ngo" class="portal hidden">
+            <h2>NGO Portal</h2>
+            <form id="ngoForm">
+                <input type="text" placeholder="NGO Name" required/>
+                <input type="email" placeholder="Email" required/>
+                <textarea placeholder="Areas of work"></textarea>
+                <button type="submit">Register</button>
+            </form>
+        </section>
+
+        <section id="leaderboard" class="portal hidden">
+            <h2>Leaderboard</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Restaurant</th>
+                        <th>Points</th>
+                        <th>Rewards</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboardBody">
+                    <tr>
+                        <td>1</td>
+                        <td>Foodie’s Delight</td>
+                        <td>120</td>
+                        <td>Gold Badge</td>
+                    </tr>
+                    <tr>
+                        <td>2</td>
+                        <td>Urban Bites</td>
+                        <td>95</td>
+                        <td>Silver Badge</td>
+                    </tr>
+                    <tr>
+                        <td>3</td>
+                        <td>Green Plate</td>
+                        <td>80</td>
+                        <td>Bronze Badge</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2025 Save Food Initiative</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
