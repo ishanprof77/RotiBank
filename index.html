@@ -1,91 +1,258 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Food Wastage Solution</title>
-    <link rel="stylesheet" href="styles.css"/>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FoodWaste Warriors - Fighting Food Waste Together</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
-    <header>
-        <h1>Save Food, Save Lives</h1>
-        <nav>
-            <button onclick="showPortal('restaurant')">Restaurant Portal</button>
-            <button onclick="showPortal('volunteer')">Volunteer Portal</button>
-            <button onclick="showPortal('ngo')">NGO Portal</button>
-            <button onclick="showPortal('leaderboard')">Leaderboard</button>
-        </nav>
-    </header>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <i class="fas fa-leaf"></i>
+                <span>FoodWaste Warriors</span>
+            </div>
+            <ul class="nav-menu">
+                <li><a href="#home" class="nav-link">Home</a></li>
+                <li><a href="#about" class="nav-link">About</a></li>
+                <li><a href="#leaderboard" class="nav-link">Leaderboard</a></li>
+                <li><a href="#contact" class="nav-link">Contact</a></li>
+            </ul>
+            <div class="hamburger">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
 
-    <main>
-        <section id="restaurant" class="portal hidden">
-            <h2>Restaurant Portal</h2>
-            <form id="restaurantForm">
-                <input type="text" placeholder="Restaurant Name" required/>
-                <input type="email" placeholder="Email" required/>
-                <textarea placeholder="Describe surplus food"></textarea>
-                <button type="submit">Submit</button>
-            </form>
-        </section>
+    <!-- Hero Section -->
+    <section id="home" class="hero">
+        <div class="hero-content">
+            <h1>Fight Food Waste, Feed the Future</h1>
+            <p>Connect restaurants, volunteers, and NGOs to reduce food waste and help those in need</p>
+            <div class="hero-buttons">
+                <a href="#portals" class="btn btn-primary">Get Started</a>
+                <a href="#about" class="btn btn-secondary">Learn More</a>
+            </div>
+        </div>
+        <div class="hero-stats">
+            <div class="stat">
+                <h3 id="totalDonations">0</h3>
+                <p>Meals Donated</p>
+            </div>
+            <div class="stat">
+                <h3 id="totalVolunteers">0</h3>
+                <p>Active Volunteers</p>
+            </div>
+            <div class="stat">
+                <h3 id="totalRestaurants">0</h3>
+                <p>Partner Restaurants</p>
+            </div>
+        </div>
+    </section>
 
-        <section id="volunteer" class="portal hidden">
-            <h2>Volunteer Portal</h2>
-            <form id="volunteerForm">
-                <input type="text" placeholder="Name" required/>
-                <input type="email" placeholder="Email" required/>
-                <input type="text" placeholder="Location" required/>
-                <button type="submit">Register</button>
-            </form>
-        </section>
+    <!-- Portals Section -->
+    <section id="portals" class="portals">
+        <div class="container">
+            <h2>Choose Your Portal</h2>
+            <p>Join the fight against food waste from your perspective</p>
+            <div class="portals-grid">
+                <div class="portal-card" onclick="openPortal('restaurant')">
+                    <div class="portal-icon">
+                        <i class="fas fa-utensils"></i>
+                    </div>
+                    <h3>Restaurant Portal</h3>
+                    <p>List surplus food, track donations, earn points and rewards</p>
+                    <div class="portal-features">
+                        <span class="feature">Food Listing</span>
+                        <span class="feature">Point System</span>
+                        <span class="feature">Analytics</span>
+                    </div>
+                    <button class="portal-btn">Enter Portal</button>
+                </div>
 
-        <section id="ngo" class="portal hidden">
-            <h2>NGO Portal</h2>
-            <form id="ngoForm">
-                <input type="text" placeholder="NGO Name" required/>
-                <input type="email" placeholder="Email" required/>
-                <textarea placeholder="Areas of work"></textarea>
-                <button type="submit">Register</button>
-            </form>
-        </section>
+                <div class="portal-card" onclick="openPortal('volunteer')">
+                    <div class="portal-icon">
+                        <i class="fas fa-hands-helping"></i>
+                    </div>
+                    <h3>Volunteer Portal</h3>
+                    <p>Pick up surplus food and deliver to those in need</p>
+                    <div class="portal-features">
+                        <span class="feature">Pickup Requests</span>
+                        <span class="feature">Route Planning</span>
+                        <span class="feature">Impact Tracking</span>
+                    </div>
+                    <button class="portal-btn">Enter Portal</button>
+                </div>
 
-        <section id="leaderboard" class="portal hidden">
-            <h2>Leaderboard</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Rank</th>
-                        <th>Restaurant</th>
-                        <th>Points</th>
-                        <th>Rewards</th>
-                    </tr>
-                </thead>
-                <tbody id="leaderboardBody">
-                    <tr>
-                        <td>1</td>
-                        <td>Foodie’s Delight</td>
-                        <td>120</td>
-                        <td>Gold Badge</td>
-                    </tr>
-                    <tr>
-                        <td>2</td>
-                        <td>Urban Bites</td>
-                        <td>95</td>
-                        <td>Silver Badge</td>
-                    </tr>
-                    <tr>
-                        <td>3</td>
-                        <td>Green Plate</td>
-                        <td>80</td>
-                        <td>Bronze Badge</td>
-                    </tr>
-                </tbody>
-            </table>
-        </section>
-    </main>
+                <div class="portal-card" onclick="openPortal('ngo')">
+                    <div class="portal-icon">
+                        <i class="fas fa-heart"></i>
+                    </div>
+                    <h3>NGO Portal</h3>
+                    <p>Manage food distribution and coordinate with volunteers</p>
+                    <div class="portal-features">
+                        <span class="feature">Distribution</span>
+                        <span class="feature">Volunteer Management</span>
+                        <span class="feature">Impact Reports</span>
+                    </div>
+                    <button class="portal-btn">Enter Portal</button>
+                </div>
+            </div>
+        </div>
+    </section>
 
-    <footer>
-        <p>&copy; 2025 Save Food Initiative</p>
+    <!-- Leaderboard Section -->
+    <section id="leaderboard" class="leaderboard">
+        <div class="container">
+            <h2>Restaurant Leaderboard</h2>
+            <p>Top performing restaurants in food waste reduction</p>
+            <div class="leaderboard-container">
+                <div class="leaderboard-header">
+                    <h3>Top Restaurants</h3>
+                    <div class="filter-buttons">
+                        <button class="filter-btn active" data-filter="all">All Time</button>
+                        <button class="filter-btn" data-filter="monthly">This Month</button>
+                        <button class="filter-btn" data-filter="weekly">This Week</button>
+                    </div>
+                </div>
+                <div class="leaderboard-list" id="leaderboardList">
+                    <!-- Leaderboard items will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- About Section -->
+    <section id="about" class="about">
+        <div class="container">
+            <div class="about-content">
+                <div class="about-text">
+                    <h2>About FoodWaste Warriors</h2>
+                    <p>We're on a mission to eliminate food waste by connecting restaurants with surplus food to volunteers and NGOs who can distribute it to those in need. Our platform creates a sustainable ecosystem where everyone benefits.</p>
+                    <div class="about-features">
+                        <div class="feature-item">
+                            <i class="fas fa-recycle"></i>
+                            <h4>Reduce Waste</h4>
+                            <p>Help restaurants minimize food waste through efficient donation systems</p>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-users"></i>
+                            <h4>Community Impact</h4>
+                            <p>Connect volunteers with meaningful opportunities to help their community</p>
+                        </div>
+                        <div class="feature-item">
+                            <i class="fas fa-trophy"></i>
+                            <h4>Reward System</h4>
+                            <p>Recognize and reward restaurants for their contributions to food waste reduction</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="about-image">
+                    <div class="impact-visual">
+                        <div class="impact-circle">
+                            <span class="impact-number">85%</span>
+                            <span class="impact-label">Waste Reduction</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section id="contact" class="contact">
+        <div class="container">
+            <h2>Get In Touch</h2>
+            <p>Ready to join the fight against food waste?</p>
+            <div class="contact-content">
+                <div class="contact-info">
+                    <div class="contact-item">
+                        <i class="fas fa-envelope"></i>
+                        <div>
+                            <h4>Email</h4>
+                            <p>info@foodwastewarriors.com</p>
+                        </div>
+                    </div>
+                    <div class="contact-item">
+                        <i class="fas fa-phone"></i>
+                        <div>
+                            <h4>Phone</h4>
+                            <p>+1 (555) 123-4567</p>
+                        </div>
+                    </div>
+                    <div class="contact-item">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <div>
+                            <h4>Address</h4>
+                            <p>123 Green Street, Eco City, EC 12345</p>
+                        </div>
+                    </div>
+                </div>
+                <form class="contact-form">
+                    <input type="text" placeholder="Your Name" required>
+                    <input type="email" placeholder="Your Email" required>
+                    <textarea placeholder="Your Message" rows="5" required></textarea>
+                    <button type="submit" class="btn btn-primary">Send Message</button>
+                </form>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>FoodWaste Warriors</h3>
+                    <p>Fighting food waste, one meal at a time.</p>
+                    <div class="social-links">
+                        <a href="#"><i class="fab fa-facebook"></i></a>
+                        <a href="#"><i class="fab fa-twitter"></i></a>
+                        <a href="#"><i class="fab fa-instagram"></i></a>
+                        <a href="#"><i class="fab fa-linkedin"></i></a>
+                    </div>
+                </div>
+                <div class="footer-section">
+                    <h4>Quick Links</h4>
+                    <ul>
+                        <li><a href="#home">Home</a></li>
+                        <li><a href="#about">About</a></li>
+                        <li><a href="#leaderboard">Leaderboard</a></li>
+                        <li><a href="#contact">Contact</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Portals</h4>
+                    <ul>
+                        <li><a href="#" onclick="openPortal('restaurant')">Restaurant</a></li>
+                        <li><a href="#" onclick="openPortal('volunteer')">Volunteer</a></li>
+                        <li><a href="#" onclick="openPortal('ngo')">NGO</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Contact Info</h4>
+                    <p><i class="fas fa-envelope"></i> info@foodwastewarriors.com</p>
+                    <p><i class="fas fa-phone"></i> +1 (555) 123-4567</p>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2024 FoodWaste Warriors. All rights reserved.</p>
+            </div>
+        </div>
     </footer>
+
+    <!-- Portal Modals -->
+    <div id="portalModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <div id="portalContent"></div>
+        </div>
+    </div>
 
     <script src="script.js"></script>
 </body>
