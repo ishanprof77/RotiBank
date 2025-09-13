@@ -1,454 +1,602 @@
-const express = require('express');
-const { body, validationResult } = require('express-validator');
-const { getDatabase } = require('../database/init');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
-
-const router = express.Router();
-
-// Apply admin authentication to all routes
-router.use(authenticateToken, requireAdmin);
-
-// Get all users with pagination and filters
-router.get('/users', async (req, res) => {
-  try {
-    const db = getDatabase();
-    const { 
-      page = 1, 
-      limit = 10, 
-      user_type, 
-      search, 
-      sort_by = 'created_at', 
-      sort_order = 'DESC',
-      is_active,
-      is_verified
-    } = req.query;
-
-    const offset = (page - 1) * limit;
-    let whereConditions = [];
-    let params = [];
-
-    // Build WHERE clause
-    if (user_type) {
-      whereConditions.push('u.user_type = ?');
-      params.push(user_type);
+class AdminDashboard {
+    constructor() {
+        this.apiBase = '/api';
+        this.token = localStorage.getItem('adminToken');
+        this.currentUser = null;
+        this.currentPage = 1;
+        this.currentSection = 'dashboard';
+        
+        this.init();
     }
 
-    if (search) {
-      whereConditions.push('(u.first_name LIKE ? OR u.last_name LIKE ? OR u.email LIKE ?)');
-      const searchTerm = `%${search}%`;
-      params.push(searchTerm, searchTerm, searchTerm);
-    }
-
-    if (is_active !== undefined) {
-      whereConditions.push('u.is_active = ?');
-      params.push(is_active === 'true' ? 1 : 0);
-    }
-
-    if (is_verified !== undefined) {
-      whereConditions.push('u.is_verified = ?');
-      params.push(is_verified === 'true' ? 1 : 0);
-    }
-
-    const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
-
-    // Get total count
-    const countQuery = `
-      SELECT COUNT(*) as total 
-      FROM users u 
-      ${whereClause}
-    `;
-    
-    const totalResult = await new Promise((resolve, reject) => {
-      db.get(countQuery, params, (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
-
-    // Get users with profile data
-    const usersQuery = `
-      SELECT 
-        u.*,
-        r.restaurant_name,
-        r.cuisine_type,
-        r.rating as restaurant_rating,
-        r.total_donations,
-        r.points as restaurant_points,
-        v.availability,
-        v.vehicle_type,
-        v.total_pickups,
-        v.points as volunteer_points,
-        n.organization_name,
-        n.cause,
-        n.total_distributions,
-        n.points as ngo_points
-      FROM users u
-      LEFT JOIN restaurants r ON u.id = r.user_id
-      LEFT JOIN volunteers v ON u.id = v.user_id
-      LEFT JOIN ngos n ON u.id = n.user_id
-      ${whereClause}
-      ORDER BY u.${sort_by} ${sort_order}
-      LIMIT ? OFFSET ?
-    `;
-
-    const users = await new Promise((resolve, reject) => {
-      db.all(usersQuery, [...params, limit, offset], (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
-
-    res.json({
-      users,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: totalResult.total,
-        pages: Math.ceil(totalResult.total / limit)
-      }
-    });
-
-  } catch (error) {
-    console.error('Admin users fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch users' });
-  }
-});
-
-// Get user by ID with full details
-router.get('/users/:id', async (req, res) => {
-  try {
-    const db = getDatabase();
-    const userId = req.params.id;
-
-    // Get user data
-    const user = await new Promise((resolve, reject) => {
-      db.get('SELECT * FROM users WHERE id = ?', [userId], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Get user-specific profile
-    let profile = null;
-    switch (user.user_type) {
-      case 'restaurant':
-        profile = await new Promise((resolve, reject) => {
-          db.get('SELECT * FROM restaurants WHERE user_id = ?', [userId], (err, row) => {
-            if (err) reject(err);
-            else resolve(row);
-          });
-        });
-        break;
-      case 'volunteer':
-        profile = await new Promise((resolve, reject) => {
-          db.get('SELECT * FROM volunteers WHERE user_id = ?', [userId], (err, row) => {
-            if (err) reject(err);
-            else resolve(row);
-          });
-        });
-        break;
-      case 'ngo':
-        profile = await new Promise((resolve, reject) => {
-          db.get('SELECT * FROM ngos WHERE user_id = ?', [userId], (err, row) => {
-            if (err) reject(err);
-            else resolve(row);
-          });
-        });
-        break;
-    }
-
-    // Get recent activity
-    const recentActivity = await new Promise((resolve, reject) => {
-      db.all(`
-        SELECT 'donation' as type, id, created_at, status, description
-        FROM food_donations 
-        WHERE restaurant_id = (SELECT id FROM restaurants WHERE user_id = ?)
-        UNION ALL
-        SELECT 'pickup' as type, id, created_at, status, notes as description
-        FROM pickup_requests 
-        WHERE volunteer_id = (SELECT id FROM volunteers WHERE user_id = ?)
-        ORDER BY created_at DESC
-        LIMIT 10
-      `, [userId, userId], (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
-
-    res.json({
-      user,
-      profile,
-      recentActivity
-    });
-
-  } catch (error) {
-    console.error('Admin user details error:', error);
-    res.status(500).json({ error: 'Failed to fetch user details' });
-  }
-});
-
-// Update user status
-router.put('/users/:id/status', [
-  body('is_active').isBoolean(),
-  body('is_verified').optional().isBoolean()
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
-
-    const db = getDatabase();
-    const userId = req.params.id;
-    const { is_active, is_verified } = req.body;
-
-    // Update user status
-    await new Promise((resolve, reject) => {
-      db.run(
-        `UPDATE users SET is_active = ?, is_verified = COALESCE(?, is_verified), updated_at = CURRENT_TIMESTAMP 
-         WHERE id = ?`,
-        [is_active ? 1 : 0, is_verified ? 1 : 0, userId],
-        (err) => {
-          if (err) reject(err);
-          else resolve();
+    async init() {
+        // Check authentication
+        if (!this.token) {
+            this.showLogin();
+            return;
         }
-      );
-    });
 
-    // Log admin action
-    await new Promise((resolve, reject) => {
-      db.run(
-        'INSERT INTO admin_logs (admin_id, action, target_type, target_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)',
-        [req.user.id, 'update_user_status', 'user', userId, 
-         `Updated status: active=${is_active}, verified=${is_verified}`, req.ip],
-        (err) => {
-          if (err) reject(err);
-          else resolve();
+        try {
+            // Verify token and get user info
+            const response = await this.apiCall('/auth/profile');
+            this.currentUser = response.user;
+            this.updateUI();
+            this.loadDashboard();
+        } catch (error) {
+            console.error('Authentication failed:', error);
+            this.showLogin();
         }
-      );
-    });
 
-    res.json({ message: 'User status updated successfully' });
-
-  } catch (error) {
-    console.error('Admin user status update error:', error);
-    res.status(500).json({ error: 'Failed to update user status' });
-  }
-});
-
-// Delete user
-router.delete('/users/:id', async (req, res) => {
-  try {
-    const db = getDatabase();
-    const userId = req.params.id;
-
-    // Get user info before deletion
-    const user = await new Promise((resolve, reject) => {
-      db.get('SELECT * FROM users WHERE id = ?', [userId], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+        this.setupEventListeners();
     }
 
-    // Delete user (cascade will handle related records)
-    await new Promise((resolve, reject) => {
-      db.run('DELETE FROM users WHERE id = ?', [userId], (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-
-    // Log admin action
-    await new Promise((resolve, reject) => {
-      db.run(
-        'INSERT INTO admin_logs (admin_id, action, target_type, target_id, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)',
-        [req.user.id, 'delete_user', 'user', userId, 
-         `Deleted user: ${user.email} (${user.user_type})`, req.ip],
-        (err) => {
-          if (err) reject(err);
-          else resolve();
+    showLogin() {
+        const email = prompt('Admin Email:');
+        const password = prompt('Admin Password:');
+        
+        if (email && password) {
+            this.login(email, password);
+        } else {
+            alert('Login required to access admin panel');
+            window.location.href = '/';
         }
-      );
-    });
-
-    res.json({ message: 'User deleted successfully' });
-
-  } catch (error) {
-    console.error('Admin user deletion error:', error);
-    res.status(500).json({ error: 'Failed to delete user' });
-  }
-});
-
-// Get dashboard statistics
-router.get('/dashboard', async (req, res) => {
-  try {
-    const db = getDatabase();
-
-    // Get user counts by type
-    const userStats = await new Promise((resolve, reject) => {
-      db.all(`
-        SELECT 
-          user_type,
-          COUNT(*) as count,
-          SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active_count,
-          SUM(CASE WHEN is_verified = 1 THEN 1 ELSE 0 END) as verified_count
-        FROM users 
-        WHERE user_type != 'admin'
-        GROUP BY user_type
-      `, (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
-
-    // Get total counts
-    const totalStats = await new Promise((resolve, reject) => {
-      db.get(`
-        SELECT 
-          COUNT(*) as total_users,
-          SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active_users,
-          SUM(CASE WHEN is_verified = 1 THEN 1 ELSE 0 END) as verified_users,
-          SUM(CASE WHEN created_at >= date('now', '-30 days') THEN 1 ELSE 0 END) as new_users_30d
-        FROM users 
-        WHERE user_type != 'admin'
-      `, (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
-
-    // Get food donation stats
-    const donationStats = await new Promise((resolve, reject) => {
-      db.get(`
-        SELECT 
-          COUNT(*) as total_donations,
-          SUM(quantity) as total_meals,
-          SUM(CASE WHEN status = 'distributed' THEN quantity ELSE 0 END) as distributed_meals,
-          SUM(CASE WHEN created_at >= date('now', '-30 days') THEN 1 ELSE 0 END) as donations_30d
-        FROM food_donations
-      `, (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
-
-    // Get recent activity
-    const recentActivity = await new Promise((resolve, reject) => {
-      db.all(`
-        SELECT 
-          'user_registration' as type,
-          u.email,
-          u.user_type,
-          u.created_at,
-          NULL as details
-        FROM users u
-        WHERE u.user_type != 'admin'
-        UNION ALL
-        SELECT 
-          'food_donation' as type,
-          u.email,
-          u.user_type,
-          fd.created_at,
-          fd.description
-        FROM food_donations fd
-        JOIN restaurants r ON fd.restaurant_id = r.id
-        JOIN users u ON r.user_id = u.id
-        ORDER BY created_at DESC
-        LIMIT 20
-      `, (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
-
-    res.json({
-      userStats,
-      totalStats,
-      donationStats,
-      recentActivity
-    });
-
-  } catch (error) {
-    console.error('Admin dashboard error:', error);
-    res.status(500).json({ error: 'Failed to fetch dashboard data' });
-  }
-});
-
-// Get admin logs
-router.get('/logs', async (req, res) => {
-  try {
-    const db = getDatabase();
-    const { page = 1, limit = 50, action, admin_id } = req.query;
-    const offset = (page - 1) * limit;
-
-    let whereConditions = [];
-    let params = [];
-
-    if (action) {
-      whereConditions.push('action = ?');
-      params.push(action);
     }
 
-    if (admin_id) {
-      whereConditions.push('admin_id = ?');
-      params.push(admin_id);
+    async login(email, password) {
+        try {
+            const response = await fetch(`${this.apiBase}/auth/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                this.token = data.token;
+                this.currentUser = data.user;
+                localStorage.setItem('adminToken', this.token);
+                this.updateUI();
+                this.loadDashboard();
+            } else {
+                alert('Login failed: ' + data.error);
+                this.showLogin();
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            alert('Login failed. Please try again.');
+            this.showLogin();
+        }
     }
 
-    const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
+    async apiCall(endpoint, options = {}) {
+        const response = await fetch(`${this.apiBase}${endpoint}`, {
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.token}`,
+                ...options.headers
+            }
+        });
 
-    // Get logs with admin info
-    const logs = await new Promise((resolve, reject) => {
-      db.all(`
-        SELECT 
-          al.*,
-          u.email as admin_email,
-          u.first_name as admin_first_name,
-          u.last_name as admin_last_name
-        FROM admin_logs al
-        JOIN users u ON al.admin_id = u.id
-        ${whereClause}
-        ORDER BY al.created_at DESC
-        LIMIT ? OFFSET ?
-      `, [...params, limit, offset], (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
-    });
+        if (response.status === 401) {
+            localStorage.removeItem('adminToken');
+            this.showLogin();
+            throw new Error('Unauthorized');
+        }
 
-    // Get total count
-    const totalResult = await new Promise((resolve, reject) => {
-      db.get(`
-        SELECT COUNT(*) as total 
-        FROM admin_logs al
-        ${whereClause}
-      `, params, (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || 'API call failed');
+        }
 
-    res.json({
-      logs,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: totalResult.total,
-        pages: Math.ceil(totalResult.total / limit)
-      }
-    });
+        return data;
+    }
 
-  } catch (error) {
-    console.error('Admin logs error:', error);
-    res.status(500).json({ error: 'Failed to fetch admin logs' });
-  }
+    setupEventListeners() {
+        // Sidebar navigation
+        document.querySelectorAll('[data-section]').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const section = e.target.getAttribute('data-section');
+                this.showSection(section);
+            });
+        });
+
+        // Logout
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            localStorage.removeItem('adminToken');
+            window.location.href = '/';
+        });
+
+        // User search
+        document.getElementById('searchUsers').addEventListener('click', () => {
+            this.loadUsers();
+        });
+
+        // User actions
+        document.getElementById('toggleUserStatus').addEventListener('click', () => {
+            this.toggleUserStatus();
+        });
+
+        document.getElementById('deleteUser').addEventListener('click', () => {
+            this.deleteUser();
+        });
+
+        // Refresh data
+        document.getElementById('refreshData').addEventListener('click', () => {
+            this.loadCurrentSection();
+        });
+    }
+
+    updateUI() {
+        if (this.currentUser) {
+            document.getElementById('adminName').textContent = 
+                `${this.currentUser.first_name} ${this.currentUser.last_name}`;
+        }
+    }
+
+    showSection(section) {
+        // Hide all sections
+        document.querySelectorAll('[id$="-section"]').forEach(el => {
+            el.style.display = 'none';
+        });
+
+        // Remove active class from nav links
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.classList.remove('active');
+        });
+
+        // Show selected section
+        document.getElementById(`${section}-section`).style.display = 'block';
+        document.querySelector(`[data-section="${section}"]`).classList.add('active');
+
+        // Update page title
+        const titles = {
+            dashboard: 'Dashboard',
+            users: 'User Management',
+            donations: 'Food Donations',
+            logs: 'Activity Logs'
+        };
+        document.getElementById('pageTitle').textContent = titles[section];
+
+        this.currentSection = section;
+        this.loadCurrentSection();
+    }
+
+    async loadCurrentSection() {
+        switch (this.currentSection) {
+            case 'dashboard':
+                await this.loadDashboard();
+                break;
+            case 'users':
+                await this.loadUsers();
+                break;
+            case 'donations':
+                await this.loadDonations();
+                break;
+            case 'logs':
+                await this.loadLogs();
+                break;
+        }
+    }
+
+    async loadDashboard() {
+        try {
+            const data = await this.apiCall('/admin/dashboard');
+            this.updateDashboardStats(data);
+            this.updateUserDistribution(data.userStats);
+            this.updateRecentActivity(data.recentActivity);
+        } catch (error) {
+            console.error('Dashboard load error:', error);
+            this.showError('Failed to load dashboard data');
+        }
+    }
+
+    updateDashboardStats(data) {
+        document.getElementById('totalUsers').textContent = data.totalStats.total_users || 0;
+        document.getElementById('totalDonations').textContent = data.donationStats.total_donations || 0;
+        document.getElementById('totalMeals').textContent = data.donationStats.total_meals || 0;
+        document.getElementById('newUsers30d').textContent = data.totalStats.new_users_30d || 0;
+    }
+
+    updateUserDistribution(userStats) {
+        const container = document.getElementById('userDistribution');
+        container.innerHTML = '';
+
+        userStats.forEach(stat => {
+            const div = document.createElement('div');
+            div.className = 'd-flex justify-content-between align-items-center mb-2';
+            div.innerHTML = `
+                <span class="text-capitalize">${stat.user_type}s</span>
+                <div>
+                    <span class="badge bg-primary me-2">${stat.count}</span>
+                    <span class="text-muted">(${stat.active_count} active)</span>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    updateRecentActivity(activities) {
+        const container = document.getElementById('recentActivity');
+        container.innerHTML = '';
+
+        activities.slice(0, 10).forEach(activity => {
+            const div = document.createElement('div');
+            div.className = 'd-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded';
+            div.innerHTML = `
+                <div>
+                    <strong>${activity.email}</strong>
+                    <small class="text-muted d-block">${activity.user_type} - ${activity.type}</small>
+                </div>
+                <small class="text-muted">${new Date(activity.created_at).toLocaleDateString()}</small>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    async loadUsers() {
+        try {
+            const search = document.getElementById('userSearch').value;
+            const userType = document.getElementById('userTypeFilter').value;
+            
+            const params = new URLSearchParams({
+                page: this.currentPage,
+                limit: 10
+            });
+            
+            if (search) params.append('search', search);
+            if (userType) params.append('user_type', userType);
+
+            const data = await this.apiCall(`/admin/users?${params}`);
+            this.renderUsersTable(data.users);
+            this.renderPagination(data.pagination, 'users');
+        } catch (error) {
+            console.error('Users load error:', error);
+            this.showError('Failed to load users');
+        }
+    }
+
+    renderUsersTable(users) {
+        const tbody = document.getElementById('usersTableBody');
+        tbody.innerHTML = '';
+
+        if (users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center">No users found</td></tr>';
+            return;
+        }
+
+        users.forEach(user => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${user.id}</td>
+                <td>${user.first_name} ${user.last_name}</td>
+                <td>${user.email}</td>
+                <td><span class="user-type-badge user-type-${user.user_type}">${user.user_type}</span></td>
+                <td><span class="status-badge ${user.is_active ? 'status-active' : 'status-inactive'}">${user.is_active ? 'Active' : 'Inactive'}</span></td>
+                <td><span class="status-badge ${user.is_verified ? 'status-verified' : 'status-unverified'}">${user.is_verified ? 'Verified' : 'Unverified'}</span></td>
+                <td>${new Date(user.created_at).toLocaleDateString()}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary btn-action" onclick="adminDashboard.viewUser(${user.id})">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-warning btn-action" onclick="adminDashboard.toggleUserStatus(${user.id}, ${user.is_active})">
+                        <i class="fas fa-${user.is_active ? 'ban' : 'check'}"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="adminDashboard.confirmDeleteUser(${user.id})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    async viewUser(userId) {
+        try {
+            const data = await this.apiCall(`/admin/users/${userId}`);
+            this.showUserDetails(data);
+        } catch (error) {
+            console.error('User details error:', error);
+            this.showError('Failed to load user details');
+        }
+    }
+
+    showUserDetails(data) {
+        const modal = new bootstrap.Modal(document.getElementById('userDetailsModal'));
+        const content = document.getElementById('userDetailsContent');
+        
+        content.innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>Basic Information</h6>
+                    <table class="table table-sm">
+                        <tr><td><strong>Name:</strong></td><td>${data.user.first_name} ${data.user.last_name}</td></tr>
+                        <tr><td><strong>Email:</strong></td><td>${data.user.email}</td></tr>
+                        <tr><td><strong>Type:</strong></td><td><span class="user-type-badge user-type-${data.user.user_type}">${data.user.user_type}</span></td></tr>
+                        <tr><td><strong>Phone:</strong></td><td>${data.user.phone || 'N/A'}</td></tr>
+                        <tr><td><strong>Address:</strong></td><td>${data.user.address || 'N/A'}</td></tr>
+                        <tr><td><strong>City:</strong></td><td>${data.user.city || 'N/A'}</td></tr>
+                        <tr><td><strong>Status:</strong></td><td><span class="status-badge ${data.user.is_active ? 'status-active' : 'status-inactive'}">${data.user.is_active ? 'Active' : 'Inactive'}</span></td></tr>
+                        <tr><td><strong>Verified:</strong></td><td><span class="status-badge ${data.user.is_verified ? 'status-verified' : 'status-unverified'}">${data.user.is_verified ? 'Verified' : 'Unverified'}</span></td></tr>
+                        <tr><td><strong>Joined:</strong></td><td>${new Date(data.user.created_at).toLocaleDateString()}</td></tr>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <h6>Profile Details</h6>
+                    ${data.profile ? this.renderProfileDetails(data.profile, data.user.user_type) : '<p>No profile details available</p>'}
+                </div>
+            </div>
+            ${data.recentActivity.length > 0 ? `
+                <div class="mt-3">
+                    <h6>Recent Activity</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Type</th>
+                                    <th>Status</th>
+                                    <th>Description</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.recentActivity.map(activity => `
+                                    <tr>
+                                        <td>${activity.type}</td>
+                                        <td><span class="status-badge status-${activity.status}">${activity.status}</span></td>
+                                        <td>${activity.description || 'N/A'}</td>
+                                        <td>${new Date(activity.created_at).toLocaleDateString()}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            ` : ''}
+        `;
+        
+        modal.show();
+    }
+
+    renderProfileDetails(profile, userType) {
+        switch (userType) {
+            case 'restaurant':
+                return `
+                    <table class="table table-sm">
+                        <tr><td><strong>Restaurant Name:</strong></td><td>${profile.restaurant_name}</td></tr>
+                        <tr><td><strong>Cuisine Type:</strong></td><td>${profile.cuisine_type || 'N/A'}</td></tr>
+                        <tr><td><strong>License Number:</strong></td><td>${profile.license_number || 'N/A'}</td></tr>
+                        <tr><td><strong>Capacity:</strong></td><td>${profile.capacity || 'N/A'}</td></tr>
+                        <tr><td><strong>Operating Hours:</strong></td><td>${profile.operating_hours || 'N/A'}</td></tr>
+                        <tr><td><strong>Total Donations:</strong></td><td>${profile.total_donations}</td></tr>
+                        <tr><td><strong>Points:</strong></td><td>${profile.points}</td></tr>
+                        <tr><td><strong>Rating:</strong></td><td>${profile.rating || 'N/A'}</td></tr>
+                    </table>
+                `;
+            case 'volunteer':
+                return `
+                    <table class="table table-sm">
+                        <tr><td><strong>Availability:</strong></td><td>${profile.availability || 'N/A'}</td></tr>
+                        <tr><td><strong>Vehicle Type:</strong></td><td>${profile.vehicle_type || 'N/A'}</td></tr>
+                        <tr><td><strong>Max Distance:</strong></td><td>${profile.max_distance || 'N/A'} km</td></tr>
+                        <tr><td><strong>Skills:</strong></td><td>${profile.skills || 'N/A'}</td></tr>
+                        <tr><td><strong>Total Pickups:</strong></td><td>${profile.total_pickups}</td></tr>
+                        <tr><td><strong>Points:</strong></td><td>${profile.points}</td></tr>
+                        <tr><td><strong>Rating:</strong></td><td>${profile.rating || 'N/A'}</td></tr>
+                    </table>
+                `;
+            case 'ngo':
+                return `
+                    <table class="table table-sm">
+                        <tr><td><strong>Organization Name:</strong></td><td>${profile.organization_name}</td></tr>
+                        <tr><td><strong>Registration Number:</strong></td><td>${profile.registration_number || 'N/A'}</td></tr>
+                        <tr><td><strong>Cause:</strong></td><td>${profile.cause || 'N/A'}</td></tr>
+                        <tr><td><strong>Target Audience:</strong></td><td>${profile.target_audience || 'N/A'}</td></tr>
+                        <tr><td><strong>Capacity:</strong></td><td>${profile.capacity || 'N/A'}</td></tr>
+                        <tr><td><strong>Total Distributions:</strong></td><td>${profile.total_distributions}</td></tr>
+                        <tr><td><strong>Points:</strong></td><td>${profile.points}</td></tr>
+                    </table>
+                `;
+            default:
+                return '<p>No profile details available</p>';
+        }
+    }
+
+    async toggleUserStatus(userId, currentStatus) {
+        try {
+            await this.apiCall(`/admin/users/${userId}/status`, {
+                method: 'PUT',
+                body: JSON.stringify({
+                    is_active: !currentStatus
+                })
+            });
+            
+            this.showSuccess(`User ${!currentStatus ? 'activated' : 'deactivated'} successfully`);
+            this.loadUsers();
+        } catch (error) {
+            console.error('Toggle user status error:', error);
+            this.showError('Failed to update user status');
+        }
+    }
+
+    confirmDeleteUser(userId) {
+        if (confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+            this.deleteUser(userId);
+        }
+    }
+
+    async deleteUser(userId) {
+        try {
+            await this.apiCall(`/admin/users/${userId}`, {
+                method: 'DELETE'
+            });
+            
+            this.showSuccess('User deleted successfully');
+            this.loadUsers();
+        } catch (error) {
+            console.error('Delete user error:', error);
+            this.showError('Failed to delete user');
+        }
+    }
+
+    async loadDonations() {
+        try {
+            // This would need to be implemented in the backend
+            const data = await this.apiCall('/admin/donations');
+            this.renderDonationsTable(data.donations || []);
+        } catch (error) {
+            console.error('Donations load error:', error);
+            this.showError('Failed to load donations');
+        }
+    }
+
+    renderDonationsTable(donations) {
+        const tbody = document.getElementById('donationsTableBody');
+        tbody.innerHTML = '';
+
+        if (donations.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center">No donations found</td></tr>';
+            return;
+        }
+
+        donations.forEach(donation => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${donation.id}</td>
+                <td>${donation.restaurant_name || 'N/A'}</td>
+                <td>${donation.food_type}</td>
+                <td>${donation.quantity}</td>
+                <td><span class="status-badge status-${donation.status}">${donation.status}</span></td>
+                <td>${new Date(donation.created_at).toLocaleDateString()}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary btn-action">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    async loadLogs() {
+        try {
+            const data = await this.apiCall('/admin/logs');
+            this.renderLogsTable(data.logs);
+        } catch (error) {
+            console.error('Logs load error:', error);
+            this.showError('Failed to load activity logs');
+        }
+    }
+
+    renderLogsTable(logs) {
+        const tbody = document.getElementById('logsTableBody');
+        tbody.innerHTML = '';
+
+        if (logs.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">No logs found</td></tr>';
+            return;
+        }
+
+        logs.forEach(log => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${log.id}</td>
+                <td>${log.admin_first_name} ${log.admin_last_name}</td>
+                <td>${log.action}</td>
+                <td>${log.target_type || 'N/A'}</td>
+                <td>${log.details || 'N/A'}</td>
+                <td>${new Date(log.created_at).toLocaleString()}</td>
+            `;
+            tbody.appendChild(row);
+        });
+    }
+
+    renderPagination(pagination, type) {
+        const container = document.getElementById(`${type}Pagination`);
+        container.innerHTML = '';
+
+        if (pagination.pages <= 1) return;
+
+        const currentPage = pagination.page;
+        const totalPages = pagination.pages;
+
+        // Previous button
+        const prevLi = document.createElement('li');
+        prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
+        prevLi.innerHTML = `<a class="page-link" href="#" onclick="adminDashboard.goToPage(${currentPage - 1}, '${type}')">Previous</a>`;
+        container.appendChild(prevLi);
+
+        // Page numbers
+        for (let i = 1; i <= totalPages; i++) {
+            if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+                const li = document.createElement('li');
+                li.className = `page-item ${i === currentPage ? 'active' : ''}`;
+                li.innerHTML = `<a class="page-link" href="#" onclick="adminDashboard.goToPage(${i}, '${type}')">${i}</a>`;
+                container.appendChild(li);
+            } else if (i === currentPage - 3 || i === currentPage + 3) {
+                const li = document.createElement('li');
+                li.className = 'page-item disabled';
+                li.innerHTML = '<span class="page-link">...</span>';
+                container.appendChild(li);
+            }
+        }
+
+        // Next button
+        const nextLi = document.createElement('li');
+        nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
+        nextLi.innerHTML = `<a class="page-link" href="#" onclick="adminDashboard.goToPage(${currentPage + 1}, '${type}')">Next</a>`;
+        container.appendChild(nextLi);
+    }
+
+    goToPage(page, type) {
+        this.currentPage = page;
+        this.loadCurrentSection();
+    }
+
+    showSuccess(message) {
+        // Simple success notification
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-success alert-dismissible fade show position-fixed';
+        alert.style.top = '20px';
+        alert.style.right = '20px';
+        alert.style.zIndex = '9999';
+        alert.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.body.appendChild(alert);
+        
+        setTimeout(() => {
+            alert.remove();
+        }, 3000);
+    }
+
+    showError(message) {
+        // Simple error notification
+        const alert = document.createElement('div');
+        alert.className = 'alert alert-danger alert-dismissible fade show position-fixed';
+        alert.style.top = '20px';
+        alert.style.right = '20px';
+        alert.style.zIndex = '9999';
+        alert.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.body.appendChild(alert);
+        
+        setTimeout(() => {
+            alert.remove();
+        }, 5000);
+    }
+}
+
+// Initialize dashboard when page loads
+let adminDashboard;
+document.addEventListener('DOMContentLoaded', () => {
+    adminDashboard = new AdminDashboard();
 });
-
-module.exports = router;
